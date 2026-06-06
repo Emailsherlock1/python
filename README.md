@@ -1,4 +1,4 @@
-# email-sherlock
+# emailsherlock-sdk
 
 Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key.
 
@@ -7,10 +7,10 @@ Zero third-party dependencies (uses only the standard library). Python 3.8+.
 ## Install
 
 ```bash
-pip install email-sherlock
+pip install emailsherlock-sdk
 ```
 
-The distribution is `email-sherlock`; the import is `emailsherlock`:
+The distribution is `emailsherlock-sdk`; the import is `emailsherlock`:
 
 ```python
 from emailsherlock import Emailsherlock
