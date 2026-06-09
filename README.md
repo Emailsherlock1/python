@@ -1,6 +1,6 @@
 # emailsherlock-sdk
 
-Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key.
+Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key. Get an API key at https://emailsherlock.com/api.
 
 Zero third-party dependencies (uses only the standard library). Python 3.8+.
 
@@ -60,8 +60,48 @@ for item in batch.results:
 | `disposable` | bool  | throwaway / temporary-mail provider                             |
 | `role`       | bool  | role address such as `info@` or `sales@`                        |
 | `catch_all`  | bool  | host accepts mail for any local part                            |
-| `score`      | float | 0–1 confidence, higher is safer to send to                      |
+| `score`      | float or None | 0–1 confidence, higher is safer to send to. `None` when no confidence could be computed (e.g. `unknown` results) |
 | `freshness`  | str   | `fresh` · `cached_recent` · `cached_stale_refreshed`            |
+| `deliverable` | bool or None | the mailbox accepts mail                                |
+| `reason`     | str or None | machine-readable explanation of the result, e.g. `mailbox_accepts`, `mailbox_not_found`, `no_mx`, `bad_syntax`, `disposable_provider`, `role_address`, `catch_all_domain`, `greylisted`, `smtp_timeout`, `smtp_unreachable`, `verification_pending` |
+| `mx_record`  | str or None | the primary MX host that answered                       |
+| `free_email` | bool or None | the domain is a free-mail provider (Gmail, Outlook, ...) |
+| `checked_at` | str or None | ISO 8601 timestamp of the verification                  |
+| `domain`     | `VerifyDomain` or None | domain-level intelligence, see below          |
+| `raw`        | dict  | the unmodified API JSON                                         |
+
+The fields from `deliverable` down are additive: they are `None` on older
+API responses and may be `null` per field when a signal has not been
+measured yet.
+
+## Domain intelligence
+
+When the API returns a `domain` object, `result.domain` is a `VerifyDomain`:
+
+| attribute      | type  | meaning                                                       |
+|----------------|-------|---------------------------------------------------------------|
+| `name`         | str   | the domain that was checked                                   |
+| `types`        | list of str or None | `freemail` · `disposable` · `custom` · `company` · `government` · `education` · `public` · `isp` |
+| `score`        | float or None | 0–100 domain trust score                              |
+| `spf`          | bool or None | a valid SPF record exists                              |
+| `dkim`         | bool or None | DKIM is set up                                         |
+| `dmarc`        | bool or None | a DMARC record exists                                  |
+| `dmarc_policy` | str or None | `none` · `quarantine` · `reject`                        |
+| `mta_sts`      | bool or None | MTA-STS policy published                               |
+| `tls_rpt`      | bool or None | TLS-RPT record exists                                  |
+| `bimi`         | bool or None | BIMI record exists                                     |
+| `dane`         | bool or None | DANE/TLSA records exist                                |
+| `blacklists`   | int or None | number of DNS blacklists listing the domain or its IPs  |
+| `dnssec`       | str or None | `secure` · `insecure` · `bogus`                         |
+| `caa`          | bool or None | a CAA record exists                                    |
+
+```python
+result = es.verify.single(email="jane@acme.com")
+
+if result.domain is not None:
+    print(result.domain.score)         # 87.0
+    print(result.domain.dmarc_policy)  # "reject"
+```
 
 ## Credits and rate limits
 

@@ -15,6 +15,7 @@ from emailsherlock import (
     Emailsherlock,
     InsufficientCreditsError,
     RateLimitError,
+    VerifyDomain,
     VerifyResult,
     BatchItemError,
 )
@@ -75,6 +76,77 @@ def test_single_ok(monkeypatch):
     assert result.score == 0.95
     assert es.credits_remaining == 41
     assert es.rate_limit["limit"] == 60
+
+
+def test_single_score_null(monkeypatch):
+    # the API returns score: null for unknown results (e.g. sandbox unknown@)
+    patch(
+        monkeypatch, 200,
+        {"email": "unknown@acme.com", "result": "unknown", "mx": True, "disposable": False,
+         "role": False, "catch_all": False, "score": None, "freshness": "fresh"},
+    )
+    es = Emailsherlock("k")
+    result = es.verify.single("unknown@acme.com")
+    assert result.result == "unknown"
+    assert result.score is None
+
+
+def test_v2_fields_absent_default_to_none():
+    # pre-v2 API responses do not carry the new fields
+    result = VerifyResult.from_dict(
+        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False,
+         "role": False, "catch_all": False, "score": 0.95, "freshness": "fresh"}
+    )
+    assert result.deliverable is None
+    assert result.reason is None
+    assert result.mx_record is None
+    assert result.free_email is None
+    assert result.checked_at is None
+    assert result.domain is None
+
+
+def test_v2_fields_and_domain_parsing(monkeypatch):
+    patch(
+        monkeypatch, 200,
+        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False,
+         "role": False, "catch_all": False, "score": 0.95, "freshness": "fresh",
+         "deliverable": True, "reason": "mailbox_accepts", "mx_record": "mx1.acme.com",
+         "free_email": False, "checked_at": "2026-06-09T12:00:00Z",
+         "domain": {
+             "name": "acme.com", "types": ["company"], "score": 87,
+             "spf": True, "dkim": True, "dmarc": True, "dmarc_policy": "reject",
+             "mta_sts": False, "tls_rpt": None, "bimi": False, "dane": None,
+             "blacklists": 0, "dnssec": "secure", "caa": True,
+         }},
+    )
+    es = Emailsherlock("k")
+    result = es.verify.single("jane@acme.com")
+    assert result.deliverable is True
+    assert result.reason == "mailbox_accepts"
+    assert result.mx_record == "mx1.acme.com"
+    assert result.free_email is False
+    assert result.checked_at == "2026-06-09T12:00:00Z"
+    assert isinstance(result.domain, VerifyDomain)
+    assert result.domain.name == "acme.com"
+    assert result.domain.types == ["company"]
+    assert result.domain.score == 87.0
+    assert result.domain.dmarc_policy == "reject"
+    assert result.domain.tls_rpt is None
+    assert result.domain.dane is None
+    assert result.domain.blacklists == 0
+    assert result.domain.dnssec == "secure"
+    assert result.domain.caa is True
+    assert result.raw["domain"]["name"] == "acme.com"
+
+
+def test_domain_all_nullable_fields_null():
+    domain = VerifyDomain.from_dict({"name": "acme.com"})
+    assert domain.name == "acme.com"
+    assert domain.types is None
+    assert domain.score is None
+    assert domain.spf is None
+    assert domain.dnssec is None
+    assert domain.caa is None
 
 
 def test_batch_mixed(monkeypatch):

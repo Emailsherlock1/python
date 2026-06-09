@@ -10,12 +10,13 @@ from .errors import (
     ServiceUnavailableError,
     ValidationError,
 )
-from .models import BatchItemError, BatchResponse, VerifyResult
+from .models import BatchItemError, BatchResponse, VerifyDomain, VerifyResult
 
 __all__ = [
     "__version__",
     "Emailsherlock",
     "VerifyResult",
+    "VerifyDomain",
     "BatchResponse",
     "BatchItemError",
     "EmailsherlockError",
