@@ -2,7 +2,7 @@
 
 Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key.
 
-Zero third-party dependencies (uses only the standard library). Python 3.8+.
+Python 3.9+. Built on `urllib3` + `pydantic`; the client and models are generated from the OpenAPI spec, with a thin hand-maintained layer for the ergonomics below.
 
 ## Install
 
@@ -39,13 +39,51 @@ Called with no argument, `Emailsherlock()` reads `ES_KEY` (or
 Up to 100 addresses per call:
 
 ```python
+from emailsherlock import is_verify_result
+
 batch = es.verify.batch(emails=["jane@acme.com", "sales@acme.com"])
 
 for item in batch.results:
-    if isinstance(item, VerifyResult):
+    if is_verify_result(item):
         print(item.email, item.result)
     else:  # BatchItemError
         print(item.email, "failed:", item.error)
+```
+
+## Async jobs
+
+For large lists, submit a job and poll it. Every address runs the full pipeline
+including the SMTP probe, so the results carry definitive inbox verdicts:
+
+```python
+import time
+
+job = es.verify.submit_job(emails=["a@acme.com", "b@acme.com"])
+while job.status != "completed":
+    time.sleep(2)
+    job = es.verify.get_job(job.id)
+
+print(job.results)
+```
+
+## Account status
+
+```python
+account = es.credits()
+account.credits.total  # spendable credits
+account.sandbox        # True on an es_test_ key
+```
+
+## Email-Guard events
+
+Record Email-Guard decision events (free, no credits). The full address is never
+sent, only the domain:
+
+```python
+es.guard.record_events([
+    {"domain": "mailinator.com", "verdict": "disposable", "action": "deny",
+     "reasons": ["disposable_provider"], "degraded": False, "source": "local"},
+])
 ```
 
 ## The result object
@@ -62,6 +100,15 @@ for item in batch.results:
 | `catch_all`  | bool  | host accepts mail for any local part                            |
 | `score`      | float | 0–1 confidence, higher is safer to send to                      |
 | `freshness`  | str   | `fresh` · `cached_recent` · `cached_stale_refreshed`            |
+| `deliverable`| bool? | proven via SMTP: True accepted, False provably bad, None unproven |
+| `reason`     | str?  | why the pipeline decided (`mailbox_accepts`, `greylisted`, …)   |
+| `mx_record`  | str?  | the primary MX host, when one was resolved                      |
+| `free_email` | bool? | the domain is a freemail provider                               |
+| `checked_at` | str?  | when the verification ran (ISO 8601)                            |
+| `domain`     | obj?  | domain-level intelligence (SPF, DKIM, DMARC, score, blacklists, …) |
+| `decision`   | obj   | `recommendation` (allow · deny · review) + `reasons`            |
+
+Every field and model is generated from the [OpenAPI spec](https://emailsherlock.com/api/docs); editors autocomplete the full shape.
 
 ## Credits and rate limits
 
@@ -82,7 +129,7 @@ Every failure raises a subclass of `EmailsherlockError`:
 | `ForbiddenError`            | 403  | key lacks the endpoint's scope (`required_scope`) |
 | `InsufficientCreditsError`  | 402  | not enough credits (`credits_required`, `credits_remaining`) |
 | `RateLimitError`            | 429  | rate limit hit (`retry_after`, `limit`, `remaining`, `reset`) |
-| `ValidationError`           | 400 / 422 | the request body was rejected            |
+| `ValidationError`           | 400 / 404 / 422 | the request was rejected, or the job was not found |
 | `ServiceUnavailableError`   | 503  | verify engine unavailable (the credit is auto-refunded) |
 
 ```python

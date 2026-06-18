@@ -1,66 +1,54 @@
-"""Typed result objects returned by the client."""
+"""Result objects.
+
+The wire models are generated from the OpenAPI spec and live in
+``emailsherlock._generated.models``. This module re-exports them under the
+package's public names and keeps the v0.1.0 aliases (``VerifyResult``,
+``BatchResponse``) working.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass
+from typing import List, Union
 
+from emailsherlock._generated.models.account_status_response import AccountStatusResponse
+from emailsherlock._generated.models.batch_item_error import BatchItemError
+from emailsherlock._generated.models.verify_decision_response import VerifyDecisionResponse
+from emailsherlock._generated.models.verify_domain_response import VerifyDomainResponse
+from emailsherlock._generated.models.verify_job_response import VerifyJobResponse
+from emailsherlock._generated.models.verify_result_response import VerifyResultResponse
 
-@dataclass
-class VerifyResult:
-    """The result for one verified address. Mirrors the API JSON."""
+# v0.1.0 compatibility alias: the single-verify result kept the name VerifyResult.
+VerifyResult = VerifyResultResponse
 
-    email: str
-    result: str  # valid | invalid | catch_all | disposable | role | unknown
-    mx: bool
-    disposable: bool
-    role: bool
-    catch_all: bool
-    score: float
-    freshness: str  # fresh | cached_recent | cached_stale_refreshed
-    raw: Dict[str, Any] = field(default_factory=dict, repr=False)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "VerifyResult":
-        return cls(
-            email=data.get("email", ""),
-            result=data.get("result", "unknown"),
-            mx=bool(data.get("mx", False)),
-            disposable=bool(data.get("disposable", False)),
-            role=bool(data.get("role", False)),
-            catch_all=bool(data.get("catch_all", False)),
-            score=float(data.get("score", 0.0)),
-            freshness=data.get("freshness", ""),
-            raw=data,
-        )
-
-
-@dataclass
-class BatchItemError:
-    """A per-address failure inside a batch response."""
-
-    email: Optional[str]
-    error: str  # invalid_email | insufficient_credits | verify_unavailable
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BatchItemError":
-        return cls(email=data.get("email"), error=data.get("error", "unknown"))
-
-
-BatchItem = Union[VerifyResult, BatchItemError]
+#: A batch entry is either a full result or a per-address error.
+BatchItem = Union[VerifyResultResponse, BatchItemError]
 
 
 @dataclass
 class BatchResponse:
-    """The response of a batch call: a list of results and/or per-item errors."""
+    """The response of a batch call: results and/or per-item errors, in order.
+
+    Mirrors the v0.1.0 shape (``.results`` is a flat list of unwrapped entries),
+    rather than exposing the generated oneOf wrapper.
+    """
 
     results: List[BatchItem]
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BatchResponse":
-        items: List[BatchItem] = []
-        for item in data.get("results", []):
-            if isinstance(item, dict) and "error" in item:
-                items.append(BatchItemError.from_dict(item))
-            else:
-                items.append(VerifyResult.from_dict(item))
-        return cls(results=items)
+
+def is_verify_result(item: BatchItem) -> bool:
+    """Type guard for a batch entry: did this address verify, or fail?"""
+    return isinstance(item, VerifyResultResponse)
+
+
+__all__ = [
+    "VerifyResult",
+    "VerifyResultResponse",
+    "BatchItemError",
+    "BatchResponse",
+    "BatchItem",
+    "is_verify_result",
+    "VerifyJobResponse",
+    "VerifyDomainResponse",
+    "VerifyDecisionResponse",
+    "AccountStatusResponse",
+]
