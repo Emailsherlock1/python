@@ -5,10 +5,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: ['3.8', '3.9', '3.11', '3.12']
+        python: ['3.9', '3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '${{ matrix.python }}' }
-      - run: pip install pytest
+      # Install the package (pulls urllib3 + pydantic + python-dateutil) plus
+      # pytest. The pre-0.2.0 client was dependency-free, so CI only installed
+      # pytest; the generated client needs its runtime deps present (EM-1034).
+      - run: pip install . pytest
       - run: pytest -q

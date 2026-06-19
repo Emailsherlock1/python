@@ -1,0 +1,25 @@
+# Managed by sdk-gen/bin/generate.sh — the sugar layer owns these.
+# Project files (the sugar's pyproject.toml carries the real deps + version):
+pyproject.toml
+setup.py
+setup.cfg
+requirements.txt
+test-requirements.txt
+tox.ini
+README.md
+.gitignore
+.gitlab-ci.yml
+.travis.yml
+git_push.sh
+.github/
+.github/**
+docs/
+docs/**
+test/
+test/**
+# Sugar source files — never overwrite the hand-maintained wrapper:
+emailsherlock/__init__.py
+emailsherlock/client.py
+emailsherlock/errors.py
+emailsherlock/models.py
+emailsherlock/_version.py
