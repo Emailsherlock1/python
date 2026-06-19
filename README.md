@@ -1,6 +1,6 @@
 # emailsherlock-sdk
 
-Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key.
+Official Python client for the [EmailSherlock](https://emailsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key. Get an API key at https://emailsherlock.com/api. Want to try a single address by hand first? The free [email verification](https://emailsherlock.com/verify) tool runs the same checks in the browser.
 
 Python 3.9+. Built on `urllib3` + `pydantic`; the client and models are generated from the OpenAPI spec, with a thin hand-maintained layer for the ergonomics below.
 
@@ -98,7 +98,7 @@ es.guard.record_events([
 | `disposable` | bool  | throwaway / temporary-mail provider                             |
 | `role`       | bool  | role address such as `info@` or `sales@`                        |
 | `catch_all`  | bool  | host accepts mail for any local part                            |
-| `score`      | float | 0–1 confidence, higher is safer to send to                      |
+| `score`      | float or None | 0–1 confidence, higher is safer to send to. `None` when no confidence could be computed (e.g. `unknown` results) |
 | `freshness`  | str   | `fresh` · `cached_recent` · `cached_stale_refreshed`            |
 | `deliverable`| bool? | proven via SMTP: True accepted, False provably bad, None unproven |
 | `reason`     | str?  | why the pipeline decided (`mailbox_accepts`, `greylisted`, …)   |
