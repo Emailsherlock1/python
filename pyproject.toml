@@ -21,8 +21,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://emailsherlock.com"
-Documentation = "https://emailsherlock.com/api/docs"
+Homepage = "https://www.hostsherlock.com"
+Documentation = "https://www.hostsherlock.com/api/docs"
 Source = "https://github.com/Emailsherlock1/python"
 
 [tool.hatch.build.targets.wheel]
