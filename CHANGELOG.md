@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- `client_id` option and `with_client_id()` send the `X-Client-Id` header, so a provider account's key can work inside one of its tenants. The current id is readable as `client.client_id`.
+
 ## 0.2.0
 
 The client is now generated from the EmailSherlock OpenAPI spec (raw client +
