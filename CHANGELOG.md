@@ -8,6 +8,7 @@ sugar layer on top. The v0.2.0 public surface still works.
 
 ### Added
 
+- `client_id` option and `with_client_id()` send the `X-Client-Id` header, so a provider account's key can work inside one of its tenants. The current id is readable as `client.client_id`.
 - `es.credits()` reads the account status (credit buckets, rate limit, plan, sandbox flag).
 - `es.verify.submit_job(emails=...)` and `es.verify.get_job(job_id)` for asynchronous verification jobs.
 - `es.guard.record_events(events)` records Email-Guard decision events.

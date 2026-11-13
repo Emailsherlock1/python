@@ -112,6 +112,7 @@ class Emailsherlock:
         *,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
+        client_id: Optional[int] = None,
     ) -> None:
         key = api_key or os.environ.get("ES_KEY") or os.environ.get("EMAILSHERLOCK_API_KEY")
         if not key:
@@ -120,13 +121,26 @@ class Emailsherlock:
                 code="config_error",
             )
 
+        if client_id is not None and (
+            isinstance(client_id, bool) or not isinstance(client_id, int) or client_id <= 0
+        ):
+            raise EmailsherlockError(
+                "client_id must be a positive integer.",
+                code="config_error",
+            )
+
+        self._key = key
+        self._base_url = base_url
         self._timeout = timeout
+        self._client_id = client_id
         configuration = Configuration(
             host=base_url.rstrip("/"),
             api_key={"ApiKeyAuth": key},
         )
         self._api_client = ApiClient(configuration)
         self._api_client.user_agent = "emailsherlock-python/{}".format(__version__)
+        if client_id is not None:
+            self._api_client.set_default_header("X-Client-Id", str(client_id))
         self._account = AccountApi(self._api_client)
 
         #: credits left after the most recent request (X-Credits-Remaining)
@@ -140,6 +154,23 @@ class Emailsherlock:
 
         self.verify = _VerifyResource(self)
         self.guard = _GuardResource(self)
+
+    @property
+    def client_id(self) -> Optional[int]:
+        """The tenant id sent as ``X-Client-Id``, or ``None`` in the key's own account."""
+        return self._client_id
+
+    def with_client_id(self, client_id: int) -> "Emailsherlock":
+        """Return a new client for one tenant, with the same key, base URL and timeout.
+
+        This client is left unchanged. The two keep separate credit and rate-limit meta.
+        """
+        return Emailsherlock(
+            self._key,
+            base_url=self._base_url,
+            timeout=self._timeout,
+            client_id=client_id,
+        )
 
     def credits(self) -> AccountStatusResponse:
         """Read the credit balance and rate-limit status. Free: consumes no credits."""
