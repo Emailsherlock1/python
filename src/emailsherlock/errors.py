@@ -75,7 +75,7 @@ class RateLimitError(EmailsherlockError):
 
 
 class ValidationError(EmailsherlockError):
-    """400 / 422 - the request body was rejected."""
+    """400 / 404 / 422 - the request was rejected, or the job was not found."""
 
 
 class ServiceUnavailableError(EmailsherlockError):
@@ -118,8 +118,34 @@ def error_from_response(
             remaining=_num(headers.get("X-RateLimit-Remaining")),
             reset=_num(headers.get("X-RateLimit-Reset")),
         )
-    if status in (400, 422):
+    if status in (400, 404, 422):
         return ValidationError(message, status=status, code=code)
     if status == 503:
         return ServiceUnavailableError(message, status=status, code=code)
     return EmailsherlockError(message, status=status, code=code)
+
+
+def error_from_api_exception(exc: Any) -> EmailsherlockError:
+    """Map the generated ``ApiException`` to one of our named errors.
+
+    The raw client raises ``ApiException`` (status + JSON body string + headers)
+    for non-2xx responses. Anything else (transport failure) is rewrapped so
+    callers only ever catch ``EmailsherlockError``.
+    """
+    import json
+
+    status = getattr(exc, "status", None)
+    headers = getattr(exc, "headers", None) or {}
+    body: Optional[Dict[str, Any]] = None
+    raw = getattr(exc, "body", None) or getattr(exc, "data", None)
+    if isinstance(raw, (str, bytes)):
+        try:
+            body = json.loads(raw)
+        except (ValueError, TypeError):
+            body = None
+    elif isinstance(raw, dict):
+        body = raw
+
+    if isinstance(status, int):
+        return error_from_response(status, body, headers)
+    return EmailsherlockError(str(exc) or "Request failed.", code="network_error")
