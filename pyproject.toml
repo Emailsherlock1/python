@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emailsherlock-sdk"
-version = "0.2.0"
+version = "0.2.1"
 description = "Official Python client for the EmailSherlock email-verification API."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -21,8 +21,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://emailsherlock.com"
-Documentation = "https://emailsherlock.com/api/docs"
+Homepage = "https://www.hostsherlock.com"
+Documentation = "https://www.hostsherlock.com/api/docs"
 Source = "https://github.com/Emailsherlock1/python"
 
 [tool.hatch.build.targets.wheel]
