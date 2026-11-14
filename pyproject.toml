@@ -7,7 +7,7 @@ name = "emailsherlock-sdk"
 version = "0.2.1"
 description = "Official Python client for the EmailSherlock email-verification API."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "EmailSherlock" }]
 keywords = ["email", "email-verification", "email-validation", "emailsherlock", "mx", "smtp", "disposable"]
