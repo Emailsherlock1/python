@@ -2,7 +2,7 @@
 
 Official Python client for the [EmailSherlock](https://www.hostsherlock.com) email-verification API. Verify one address or a batch over HTTPS with an API key. Get an API key at https://www.hostsherlock.com/api. Want to try a single address by hand first? The free [email verification](https://www.hostsherlock.com/verify) tool runs the same checks in the browser.
 
-Zero third-party dependencies (uses only the standard library). Python 3.8+.
+Zero third-party dependencies (uses only the standard library). Python 3.9+.
 
 ## Install
 
