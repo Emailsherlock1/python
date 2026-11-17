@@ -1,8 +1,10 @@
-"""Unit tests with a stubbed urlopen. No network."""
-import io
+"""Unit tests with a stubbed REST layer. No network.
+
+The client wraps the generated urllib3-based raw client, so we stub
+``RESTClientObject.request`` (the single HTTP seam) rather than urllib.
+"""
 import json
 import sys
-import urllib.error
 from pathlib import Path
 
 import pytest
@@ -15,13 +17,14 @@ from emailsherlock import (
     Emailsherlock,
     InsufficientCreditsError,
     RateLimitError,
-    VerifyDomain,
-    VerifyResult,
-    BatchItemError,
+    is_verify_result,
 )
+from emailsherlock._generated import rest
 
 
 class FakeHeaders(dict):
+    """Case-insensitive header lookup, like urllib3's HTTPHeaderDict."""
+
     def get(self, key, default=None):
         for k, v in self.items():
             if k.lower() == key.lower():
@@ -29,168 +32,119 @@ class FakeHeaders(dict):
         return default
 
 
-class FakeResponse:
+class FakeRESTResponse:
     def __init__(self, status, body, headers):
         self.status = status
-        self._body = json.dumps(body).encode()
-        self.headers = FakeHeaders(headers)
+        self.reason = "stub"
+        self.data = b"" if body is None else json.dumps(body).encode()
+        self.headers = FakeHeaders({"content-type": "application/json", **(headers or {})})
 
     def read(self):
-        return self._body
+        return self.data
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
+    def getheaders(self):
+        return self.headers
 
 
-def patch(monkeypatch, status, body, headers=None):
-    headers = headers or {}
-    if status >= 400:
-        def raiser(req, timeout=None):
-            raise urllib.error.HTTPError(
-                req.full_url, status, "err", FakeHeaders(headers),
-                io.BytesIO(json.dumps(body).encode()),
-            )
-        monkeypatch.setattr(emailsherlock.client.urllib.request, "urlopen", raiser)
-    else:
-        monkeypatch.setattr(
-            emailsherlock.client.urllib.request,
-            "urlopen",
-            lambda req, timeout=None: FakeResponse(status, body, headers),
-        )
+def stub(monkeypatch, status, body, headers=None):
+    def _request(self, method, url, headers=None, body=None, post_params=None,
+                 _request_timeout=None, **kw):
+        return FakeRESTResponse(status, _request.body, _request.headers)
+    _request.body = body
+    _request.headers = headers
+    monkeypatch.setattr(rest.RESTClientObject, "request", _request)
 
 
-def test_single_ok(monkeypatch):
-    patch(
-        monkeypatch, 200,
-        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False,
-         "role": False, "catch_all": False, "score": 0.95, "freshness": "fresh"},
-        {"X-Credits-Remaining": "41", "X-RateLimit-Limit": "60", "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "1700000000"},
-    )
-    es = Emailsherlock("k")
-    result = es.verify.single("jane@acme.com")
-    assert isinstance(result, VerifyResult)
-    assert result.result == "valid"
-    assert result.score == 0.95
+WIRE = {
+    "email": "jane@acme.com", "result": "valid", "mx": True, "mx_record": "mx1.acme.com",
+    "disposable": False, "role": False, "catch_all": True, "free_email": False,
+    "score": 0.95, "freshness": "fresh", "checked_at": "2026-06-09T14:32:00+00:00",
+    "decision": {"recommendation": "allow", "reasons": ["mailbox_accepts"]},
+}
+
+
+def test_single_returns_result_and_captures_meta(monkeypatch):
+    stub(monkeypatch, 200, WIRE, {
+        "X-Credits-Remaining": "41", "X-RateLimit-Limit": "60",
+        "X-RateLimit-Remaining": "59", "X-RateLimit-Reset": "1700000000",
+    })
+    es = Emailsherlock("test-key")
+    r = es.verify.single("jane@acme.com")
+    assert r.result == "valid"
+    assert r.score == 0.95
     assert es.credits_remaining == 41
     assert es.rate_limit["limit"] == 60
 
 
-def test_single_score_null(monkeypatch):
-    # the API returns score: null for unknown results (e.g. sandbox unknown@)
-    patch(
-        monkeypatch, 200,
-        {"email": "unknown@acme.com", "result": "unknown", "mx": True, "disposable": False,
-         "role": False, "catch_all": False, "score": None, "freshness": "fresh"},
-    )
-    es = Emailsherlock("k")
-    result = es.verify.single("unknown@acme.com")
-    assert result.result == "unknown"
-    assert result.score is None
+def test_single_keeps_wire_field_names(monkeypatch):
+    # Regression (EM-1034): snake_case wire fields survive, no camelCase rename.
+    stub(monkeypatch, 200, WIRE)
+    r = Emailsherlock("k").verify.single("jane@acme.com")
+    assert r.catch_all is True
+    assert r.mx_record == "mx1.acme.com"
+    assert r.free_email is False
+    assert r.checked_at == "2026-06-09T14:32:00+00:00"
 
 
-def test_v2_fields_absent_default_to_none():
-    # pre-v2 API responses do not carry the new fields
-    result = VerifyResult.from_dict(
-        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False,
-         "role": False, "catch_all": False, "score": 0.95, "freshness": "fresh"}
-    )
-    assert result.deliverable is None
-    assert result.reason is None
-    assert result.mx_record is None
-    assert result.free_email is None
-    assert result.checked_at is None
-    assert result.domain is None
+def test_batch_unwraps_results_and_type_guard(monkeypatch):
+    stub(monkeypatch, 200, {"results": [WIRE, {"email": "nope@", "error": "invalid_email"}]})
+    resp = Emailsherlock("k").verify.batch(["jane@acme.com", "nope@"])
+    assert len(resp.results) == 2
+    assert is_verify_result(resp.results[0])
+    assert not is_verify_result(resp.results[1])
+    assert resp.results[1].error == "invalid_email"
 
 
-def test_v2_fields_and_domain_parsing(monkeypatch):
-    patch(
-        monkeypatch, 200,
-        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False,
-         "role": False, "catch_all": False, "score": 0.95, "freshness": "fresh",
-         "deliverable": True, "reason": "mailbox_accepts", "mx_record": "mx1.acme.com",
-         "free_email": False, "checked_at": "2026-06-09T12:00:00Z",
-         "domain": {
-             "name": "acme.com", "types": ["company"], "score": 87,
-             "spf": True, "dkim": True, "dmarc": True, "dmarc_policy": "reject",
-             "mta_sts": False, "tls_rpt": None, "bimi": False, "dane": None,
-             "blacklists": 0, "dnssec": "secure", "caa": True,
-         }},
-    )
-    es = Emailsherlock("k")
-    result = es.verify.single("jane@acme.com")
-    assert result.deliverable is True
-    assert result.reason == "mailbox_accepts"
-    assert result.mx_record == "mx1.acme.com"
-    assert result.free_email is False
-    assert result.checked_at == "2026-06-09T12:00:00Z"
-    assert isinstance(result.domain, VerifyDomain)
-    assert result.domain.name == "acme.com"
-    assert result.domain.types == ["company"]
-    assert result.domain.score == 87.0
-    assert result.domain.dmarc_policy == "reject"
-    assert result.domain.tls_rpt is None
-    assert result.domain.dane is None
-    assert result.domain.blacklists == 0
-    assert result.domain.dnssec == "secure"
-    assert result.domain.caa is True
-    assert result.raw["domain"]["name"] == "acme.com"
+def test_credits_returns_account_status(monkeypatch):
+    stub(monkeypatch, 200, {
+        "credits": {"total": 1240, "purchased": 1000, "gifted": 240},
+        "rate_limit": {"limit": 60, "remaining": 59, "reset": 1700000000},
+        "plan": "Free", "sandbox": False,
+    })
+    status = Emailsherlock("k").credits()
+    assert status.credits.total == 1240
+    assert status.sandbox is False
 
 
-def test_domain_all_nullable_fields_null():
-    domain = VerifyDomain.from_dict({"name": "acme.com"})
-    assert domain.name == "acme.com"
-    assert domain.types is None
-    assert domain.score is None
-    assert domain.spf is None
-    assert domain.dnssec is None
-    assert domain.caa is None
+def test_submit_job_returns_processing(monkeypatch):
+    stub(monkeypatch, 202, {
+        "id": "job-1", "status": "processing", "total": 2,
+        "progress": {"total": 2, "done": 0},
+        "created_at": "2026-06-10T14:32:00+00:00", "expires_at": "2026-06-17T14:32:00+00:00",
+    })
+    job = Emailsherlock("k").verify.submit_job(["a@b.com", "c@d.com"])
+    assert job.id == "job-1"
+    assert job.status == "processing"
 
 
-def test_batch_mixed(monkeypatch):
-    patch(monkeypatch, 200, {"results": [
-        {"email": "jane@acme.com", "result": "valid", "mx": True, "disposable": False, "role": False, "catch_all": False, "score": 0.9, "freshness": "fresh"},
-        {"email": "nope@", "error": "invalid_email"},
-    ]})
-    es = Emailsherlock("k")
-    batch = es.verify.batch(["jane@acme.com", "nope@"])
-    assert len(batch.results) == 2
-    assert isinstance(batch.results[0], VerifyResult)
-    assert isinstance(batch.results[1], BatchItemError)
-    assert batch.results[1].error == "invalid_email"
-
-
-def test_401(monkeypatch):
-    patch(monkeypatch, 401, {"error": {"code": "unauthorized", "message": "Invalid API key."}})
-    es = Emailsherlock("bad")
+def test_401_raises_authentication_error(monkeypatch):
+    stub(monkeypatch, 401, {"error": {"code": "unauthorized", "message": "Invalid API key."}})
     with pytest.raises(AuthenticationError) as exc:
-        es.verify.single("a@b.com")
+        Emailsherlock("bad").verify.single("a@b.com")
     assert exc.value.status == 401
     assert exc.value.code == "unauthorized"
 
 
-def test_402(monkeypatch):
-    patch(monkeypatch, 402, {"error": {"code": "insufficient_credits", "message": "Not enough."}},
-          {"X-Credits-Required": "1", "X-Credits-Remaining": "0"})
-    es = Emailsherlock("k")
+def test_402_carries_credit_headers(monkeypatch):
+    stub(monkeypatch, 402,
+         {"error": {"code": "insufficient_credits", "message": "Not enough credits."}},
+         {"X-Credits-Required": "1", "X-Credits-Remaining": "0"})
     with pytest.raises(InsufficientCreditsError) as exc:
-        es.verify.single("a@b.com")
+        Emailsherlock("k").verify.single("a@b.com")
     assert exc.value.credits_required == 1
     assert exc.value.credits_remaining == 0
 
 
-def test_429(monkeypatch):
-    patch(monkeypatch, 429, {"error": {"code": "rate_limit_exceeded", "message": "Slow down."}},
-          {"Retry-After": "30"})
-    es = Emailsherlock("k")
+def test_429_carries_retry_after(monkeypatch):
+    stub(monkeypatch, 429,
+         {"error": {"code": "rate_limit_exceeded", "message": "Rate limit exceeded."}},
+         {"Retry-After": "30", "X-RateLimit-Limit": "60"})
     with pytest.raises(RateLimitError) as exc:
-        es.verify.single("a@b.com")
+        Emailsherlock("k").verify.single("a@b.com")
     assert exc.value.retry_after == 30
 
 
-def test_missing_key(monkeypatch):
+def test_missing_key_raises_at_construction(monkeypatch):
     monkeypatch.delenv("ES_KEY", raising=False)
     monkeypatch.delenv("EMAILSHERLOCK_API_KEY", raising=False)
     with pytest.raises(emailsherlock.EmailsherlockError):
