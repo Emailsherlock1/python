@@ -86,6 +86,31 @@ es.guard.record_events([
 ])
 ```
 
+## Working for a tenant (`X-Client-Id`)
+
+If your key belongs to a provider account, you can run calls inside one of its tenants. Usage, verify jobs (and their refunds), deliverability addresses and Guard events then land on that tenant. Pass the tenant's numeric id as `client_id`, or derive a second client from an existing one:
+
+```python
+es = Emailsherlock(api_key=os.environ["ES_KEY"], client_id=1234)
+es.verify.single(email="jane@acme.com")
+
+# or: same key, base URL and timeout, a different tenant
+other = es.with_client_id(5678)
+other.client_id  # 5678
+```
+
+`with_client_id()` returns a new client and leaves the original unchanged, so each keeps its own credit and rate-limit readings. Without `client_id` the key works in its own account and no header is sent.
+
+Poll a job with the same client that submitted it. A job submitted for a tenant is only visible with the same `X-Client-Id`.
+
+Failures you can hit:
+
+- 404 `client_not_found` (`ValidationError`): the id is not one your key may reach.
+- 403 `forbidden` (`ForbiddenError`): the tenant is blocked from the API.
+- 400 `client_id_not_allowed` (`ValidationError`): the key is not a provider key.
+
+Read the server code from `err.code`. A `client_id` that is not a positive integer raises `EmailsherlockError` with code `config_error` before any request is sent.
+
 ## The result object
 
 `VerifyResult` mirrors the API JSON:
