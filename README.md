@@ -108,7 +108,7 @@ es.guard.record_events([
 | `domain`     | obj?  | domain-level intelligence (SPF, DKIM, DMARC, score, blacklists, …) |
 | `decision`   | obj   | `recommendation` (allow · deny · review) + `reasons`            |
 
-Every field and model is generated from the [OpenAPI spec](https://emailsherlock.com/api/docs); editors autocomplete the full shape.
+Every field and model is generated from the [OpenAPI spec](https://www.hostsherlock.com/api/docs); editors autocomplete the full shape.
 
 ## Credits and rate limits
 
