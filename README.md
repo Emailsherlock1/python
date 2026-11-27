@@ -86,6 +86,73 @@ es.guard.record_events([
 ])
 ```
 
+## Deliverability checks
+
+Send a test message to one of your check addresses, then read the verdict before a campaign goes out. Free:
+
+```python
+addresses = es.deliverability.list_addresses().addresses
+gate = es.deliverability.latest(addresses[0].id)  # the pre-send gate, no live probe
+if gate.has_result:
+    print(gate.verdict.score, gate.verdict.verdict_band)
+
+hook = es.deliverability.set_webhook(addresses[0].id, "https://hooks.example.com/es")
+hook.webhook.secret  # shown on this call only, store it
+```
+
+`list_checks(id, limit=, offset=)`, `get_check(id)` and `delete_webhook(id)` cover the rest.
+
+## DMARC
+
+`start()` watches a domain and returns the DMARC record to publish; `check()` looks it up again. The report reads need your account's report address in the domain's DMARC record; watching a domain alone does not unlock them. Free:
+
+```python
+setup = es.dmarc.start("acme.com")
+print(setup.status, setup.record)
+
+summary = es.dmarc.summary("acme.com", range=7)  # 7 or 30 days
+print(summary.aligned_pct)
+```
+
+`reports(domain, from_=, to=, reporter=, limit=, offset=)` lists the aggregate reports (`from_` is sent as `from`, a `date` or `"YYYY-MM-DD"`), and `sources(domain, range=, result=, check=, limit=, offset=)` the rows of the senders table.
+
+## TLS-RPT
+
+Needs your account's report address in the domain's TLS-RPT record. Free:
+
+```python
+page = es.tls_rpt.reports("acme.com", range=30, limit=50)
+for report in page.reports:
+    print(report.reporter, report.failure_count)
+```
+
+## Domain changes and next steps
+
+`changes()` reads the timeline of a domain you watch. `next_steps()` needs your account's report address in the domain's DMARC record. Free:
+
+```python
+for change in es.domains.changes("acme.com", limit=20).changes:
+    print(change.created_at, change.title)
+
+steps = es.domains.next_steps("acme.com")
+print(steps.policy.value, len(steps.unaligned_sources))
+```
+
+## Impersonation
+
+Score whether a sender poses as one of the people or organisations you protect. Send the header fields only, no subject or body. This call costs credits:
+
+```python
+verdict = es.impersonation.analyze(
+    "thomas.berger.ceo@gmail.com",
+    [{"name": "Thomas Berger", "domains": ["acme.de"]}],
+    display_name="Thomas Berger",
+)
+print(verdict.risk, verdict.score)  # "high", 60
+```
+
+`reply_to=` and `dmarc=` are optional. List the domains and addresses each identity really sends from; without them, genuine mail from that identity scores like a forgery.
+
 ## Working for a tenant (`X-Client-Id`)
 
 If your key belongs to a provider account, you can run calls inside one of its tenants. Usage, verify jobs (and their refunds), deliverability addresses and Guard events then land on that tenant. Pass the tenant's numeric id as `client_id`, or derive a second client from an existing one:
@@ -154,8 +221,10 @@ Every failure raises a subclass of `EmailsherlockError`:
 | `ForbiddenError`            | 403  | key lacks the endpoint's scope (`required_scope`) |
 | `InsufficientCreditsError`  | 402  | not enough credits (`credits_required`, `credits_remaining`) |
 | `RateLimitError`            | 429  | rate limit hit (`retry_after`, `limit`, `remaining`, `reset`) |
-| `ValidationError`           | 400 / 404 / 422 | the request was rejected, or the job was not found |
-| `ServiceUnavailableError`   | 503  | verify engine unavailable (the credit is auto-refunded) |
+| `ValidationError`           | 400 / 404 / 422 | the request was rejected, or the job, address or domain was not found |
+| `ServiceUnavailableError`   | 503  | the service could not answer (on a verify call the credit is auto-refunded) |
+
+Any other status, such as 409 from `dmarc.start()`, raises `EmailsherlockError` itself; read `err.status` and `err.code`.
 
 ```python
 from emailsherlock import RateLimitError

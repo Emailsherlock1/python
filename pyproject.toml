@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emailsherlock-sdk"
-version = "0.3.0"
-description = "Official Python client for the EmailSherlock email-verification API."
+version = "0.4.0"
+description = "Official Python client for the EmailSherlock API."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

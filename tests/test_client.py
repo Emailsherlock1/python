@@ -3,6 +3,7 @@
 The client wraps the generated urllib3-based raw client, so we stub
 ``RESTClientObject.request`` (the single HTTP seam) rather than urllib.
 """
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -58,6 +59,7 @@ def stub(monkeypatch, status, body, headers=None):
 WIRE = {
     "email": "jane@acme.com", "result": "valid", "mx": True, "mx_record": "mx1.acme.com",
     "disposable": False, "role": False, "catch_all": True, "free_email": False,
+    "relay": False, "parked": False, "spam_trap": False,
     "score": 0.95, "freshness": "fresh", "checked_at": "2026-06-09T14:32:00+00:00",
     "decision": {"recommendation": "allow", "reasons": ["mailbox_accepts"]},
 }
@@ -219,3 +221,245 @@ def test_client_errors_keep_server_code(monkeypatch, status, code, cls):
     with pytest.raises(cls) as exc:
         Emailsherlock("k", client_id=1).credits()
     assert exc.value.code == code
+
+
+# --- Deliverability, DMARC, TLS-RPT, domains, impersonation (EM-4804) --------
+
+def record(monkeypatch, status, body, headers=None):
+    """Stub the REST seam and record each request's method, URL, headers and JSON body."""
+    seen = []
+
+    def _request(self, method, url, headers=None, body=None, post_params=None,
+                 _request_timeout=None, **kw):
+        seen.append({"method": method, "url": url, "headers": dict(headers or {}), "body": body})
+        return FakeRESTResponse(status, _request.body, _request.headers)
+    _request.body = body
+    _request.headers = headers
+    monkeypatch.setattr(rest.RESTClientObject, "request", _request)
+    return seen
+
+
+BASE = "https://api.emailsherlock.com"
+
+ADDRESS = {
+    "id": 45, "label": "Newsletter", "address": "dc-3f9a@check.mail.emailsherlock.com",
+    "active": True, "has_webhook": False, "latest_verdict": None,
+    "created_at": "2026-07-25T14:03:11+00:00",
+}
+CHECK = {
+    "id": 90210, "address_id": 45, "address_label": "Newsletter",
+    "address": "dc-3f9a@check.mail.emailsherlock.com", "received_at": "2026-07-25T14:03:11+00:00",
+    "from": "news@brand.example.com", "score": 82, "verdict_band": "inbox_ready",
+    "forwarded_inline": False,
+}
+SETUP = {
+    "domain": "acme.com", "status": "not_found", "confirmed": False,
+    "watch_slots": {"used": 1, "max": 3},
+}
+PAGE = {"limit": 10, "offset": 20, "count": 0, "next_offset": None}
+
+
+def test_deliverability_list_addresses(monkeypatch):
+    seen = record(monkeypatch, 200, {"addresses": [ADDRESS]})
+    resp = Emailsherlock("k").deliverability.list_addresses()
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/addresses"
+    assert seen[0]["body"] is None
+    assert resp.addresses[0].id == 45
+
+
+def test_deliverability_latest(monkeypatch):
+    seen = record(monkeypatch, 200, {
+        "address_id": 45, "has_result": True,
+        "verdict": {"check_id": 90210, "score": 82, "verdict_band": "inbox_ready"},
+    })
+    resp = Emailsherlock("k").deliverability.latest(45)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/addresses/45/latest"
+    assert resp.verdict.score == 82
+
+
+def test_deliverability_list_checks_sends_only_set_params(monkeypatch):
+    seen = record(monkeypatch, 200, {
+        "address_id": 45, "limit": 10, "offset": 0, "count": 0, "checks": [],
+    })
+    es = Emailsherlock("k")
+    resp = es.deliverability.list_checks(45, limit=10)
+    es.deliverability.list_checks(45)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/addresses/45/checks?limit=10"
+    assert seen[1]["url"] == BASE + "/v1/deliverability/addresses/45/checks"
+    assert resp.address_id == 45
+
+
+def test_deliverability_get_check(monkeypatch):
+    seen = record(monkeypatch, 200, CHECK)
+    resp = Emailsherlock("k").deliverability.get_check(90210)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/checks/90210"
+    assert resp.var_from == "news@brand.example.com"
+    assert resp.verdict_band == "inbox_ready"
+
+
+def test_deliverability_set_webhook_returns_secret(monkeypatch):
+    seen = record(monkeypatch, 200, {
+        "address_id": 45,
+        "webhook": {"url": "https://hooks.example.com/es", "secret": "whsec_1"},
+    })
+    resp = Emailsherlock("k").deliverability.set_webhook(45, "https://hooks.example.com/es")
+    assert seen[0]["method"] == "PUT"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/addresses/45/webhook"
+    assert seen[0]["body"] == {"url": "https://hooks.example.com/es"}
+    assert resp.webhook.secret == "whsec_1"
+
+
+def test_deliverability_delete_webhook(monkeypatch):
+    seen = record(monkeypatch, 200, {"address_id": 45, "webhook": None})
+    resp = Emailsherlock("k").deliverability.delete_webhook(45)
+    assert seen[0]["method"] == "DELETE"
+    assert seen[0]["url"] == BASE + "/v1/deliverability/addresses/45/webhook"
+    assert seen[0]["body"] is None
+    assert resp.address_id == 45
+
+
+def test_dmarc_start_encodes_domain(monkeypatch):
+    seen = record(monkeypatch, 200, dict(SETUP, domain="bücher.de"))
+    resp = Emailsherlock("k").dmarc.start("bücher.de")
+    assert seen[0]["method"] == "POST"
+    assert seen[0]["url"] == BASE + "/v1/domains/b%C3%BCcher.de/dmarc"
+    assert resp.status == "not_found"
+    assert resp.watch_slots.max == 3
+
+
+def test_dmarc_check(monkeypatch):
+    seen = record(monkeypatch, 200, dict(SETUP, status="found", confirmed=True))
+    resp = Emailsherlock("k").dmarc.check("acme.com")
+    assert seen[0]["method"] == "POST"
+    assert seen[0]["url"] == BASE + "/v1/domains/acme.com/dmarc/check"
+    assert resp.confirmed is True
+
+
+def test_dmarc_summary(monkeypatch):
+    seen = record(monkeypatch, 200, {
+        "domain": "acme.com", "range_days": 7, "message_count": 120, "aligned_messages": 100,
+        "aligned_pct": 83.3, "source_count": 4, "known_source_count": 3,
+        "unknown_source_count": 1, "new_source_count": 0, "failing_source_count": 1,
+        "last_received_at": None,
+    })
+    resp = Emailsherlock("k").dmarc.summary("acme.com", range=7)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/dmarc/acme.com/summary?range=7"
+    assert resp.aligned_pct == 83.3
+
+
+def test_dmarc_reports_sends_from_and_to(monkeypatch):
+    seen = record(monkeypatch, 200, dict(PAGE, domain="acme.com", history_from=None, reports=[]))
+    resp = Emailsherlock("k").dmarc.reports(
+        "acme.com", from_="2026-11-01", to=datetime.date(2026, 11, 20),
+        reporter="google.com", limit=10, offset=20,
+    )
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == (
+        BASE + "/v1/dmarc/acme.com/reports"
+        "?from=2026-11-01&to=2026-11-20&reporter=google.com&limit=10&offset=20"
+    )
+    assert resp.offset == 20
+
+
+def test_dmarc_sources(monkeypatch):
+    seen = record(monkeypatch, 200, dict(PAGE, domain="acme.com", range_days=30, sources=[]))
+    resp = Emailsherlock("k").dmarc.sources("acme.com", range=30, result="fail", check="spf")
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/dmarc/acme.com/sources?range=30&result=fail&check=spf"
+    assert resp.sources == []
+
+
+def test_tls_rpt_reports(monkeypatch):
+    seen = record(monkeypatch, 200, dict(PAGE, domain="acme.com", range_days=7, reports=[]))
+    resp = Emailsherlock("k").tls_rpt.reports("acme.com", range=7, limit=10, offset=20)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/tls-rpt/acme.com/reports?range=7&limit=10&offset=20"
+    assert resp.range_days == 7
+
+
+def test_domains_changes(monkeypatch):
+    seen = record(monkeypatch, 200, dict(PAGE, domain="acme.com", history_from=None, changes=[{
+        "type": "dkim_selector_added", "tag": "DKIM", "title": "DKIM selector added",
+        "description": "", "created_at": "2026-11-20T10:00:00+00:00",
+    }]))
+    resp = Emailsherlock("k").domains.changes("acme.com", limit=10, offset=20)
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/domains/acme.com/changes?limit=10&offset=20"
+    assert resp.changes[0].title == "DKIM selector added"
+
+
+def test_domains_next_steps(monkeypatch):
+    seen = record(monkeypatch, 200, {
+        "domain": "acme.com", "policy": {"tag": "p", "value": "none"},
+        "unaligned_sources": [], "findings": [],
+    })
+    resp = Emailsherlock("k").domains.next_steps("acme.com")
+    assert seen[0]["method"] == "GET"
+    assert seen[0]["url"] == BASE + "/v1/domains/acme.com/next-steps"
+    assert resp.policy.value == "none"
+
+
+ANALYZE = {
+    "risk": "high", "score": 60, "identity": "Thomas Berger",
+    "reasons": [{"reason": "display_name", "weight": 40, "detail": "Thomas Berger"}],
+}
+
+
+def test_impersonation_analyze_sends_body_and_captures_credits(monkeypatch):
+    seen = record(monkeypatch, 200, ANALYZE, {"X-Credits-Remaining": "9"})
+    es = Emailsherlock("k")
+    resp = es.impersonation.analyze(
+        "thomas.berger.ceo@gmail.com",
+        [{"name": "Thomas Berger", "domains": ["acme.de"]}],
+        display_name="Thomas Berger",
+    )
+    assert seen[0]["method"] == "POST"
+    assert seen[0]["url"] == BASE + "/v1/impersonation/analyze"
+    assert seen[0]["body"] == {
+        "from": "thomas.berger.ceo@gmail.com",
+        "display_name": "Thomas Berger",
+        "protected": [{"name": "Thomas Berger", "domains": ["acme.de"]}],
+    }
+    assert resp.risk == "high"
+    assert resp.reasons[0].weight == 40
+    assert es.credits_remaining == 9
+
+
+def test_impersonation_402_raises_insufficient_credits(monkeypatch):
+    record(monkeypatch, 402,
+           {"error": {"code": "insufficient_credits", "message": "Not enough credits."}},
+           {"X-Credits-Required": "1", "X-Credits-Remaining": "0"})
+    with pytest.raises(InsufficientCreditsError) as exc:
+        Emailsherlock("k").impersonation.analyze("a@b.com", [{"name": "Thomas Berger"}])
+    assert exc.value.status == 402
+    assert exc.value.credits_required == 1
+
+
+def test_dmarc_403_raises_forbidden(monkeypatch):
+    record(monkeypatch, 403, {"error": {"code": "forbidden", "message": "x"}})
+    with pytest.raises(emailsherlock.ForbiddenError) as exc:
+        Emailsherlock("k").dmarc.summary("acme.com")
+    assert exc.value.code == "forbidden"
+
+
+def test_dmarc_start_409_falls_through_to_base_error(monkeypatch):
+    record(monkeypatch, 409, {"error": {"code": "conflict", "message": "x"}})
+    with pytest.raises(emailsherlock.EmailsherlockError) as exc:
+        Emailsherlock("k").dmarc.start("acme.com")
+    assert type(exc.value) is emailsherlock.EmailsherlockError
+    assert exc.value.status == 409
+    assert exc.value.code == "conflict"
+
+
+def test_client_id_reaches_new_endpoint(monkeypatch):
+    seen = record(monkeypatch, 200, dict(PAGE, domain="acme.com", history_from=None, changes=[]))
+    base = Emailsherlock("k")
+    base.with_client_id(42).domains.changes("acme.com")
+    base.domains.changes("acme.com")
+    assert seen[0]["headers"]["X-Client-Id"] == "42"
+    assert "X-Client-Id" not in seen[1]["headers"]
