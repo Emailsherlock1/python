@@ -75,11 +75,11 @@ class RateLimitError(EmailsherlockError):
 
 
 class ValidationError(EmailsherlockError):
-    """400 / 404 / 422 - the request was rejected, or the job was not found."""
+    """400 / 404 / 422 - the request was rejected, or the job, address or domain was not found."""
 
 
 class ServiceUnavailableError(EmailsherlockError):
-    """503 - the verify engine could not answer; the credit was auto-refunded."""
+    """503 - the service could not answer; on a verify call the credit is auto-refunded."""
 
 
 def error_from_response(
