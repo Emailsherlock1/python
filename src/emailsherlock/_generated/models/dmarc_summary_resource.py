@@ -23,6 +23,13 @@ from emailsherlock._generated.models.dmarc_summary_resource_reported_policy impo
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DmarcSummaryResource(BaseModel):
     """
@@ -43,10 +50,15 @@ class DmarcSummaryResource(BaseModel):
     __properties: ClassVar[List[str]] = ["domain", "range_days", "message_count", "aligned_messages", "aligned_pct", "source_count", "known_source_count", "unknown_source_count", "new_source_count", "failing_source_count", "last_received_at", "reported_policy"]
 
     @field_validator('range_days')
-    def range_days_validate_enum(cls, value):
+    def range_days_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set([7, 30]):
-            raise ValueError("must be one of enum values (7, 30)")
+        _allowed = set([7, 30, 11184809])
+        _unknown = 11184809
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set([7, 30, 11184809]):
+            raise ValueError("must be one of enum values (7, 30, 11184809)")
         return value
 
     model_config = ConfigDict(
@@ -130,7 +142,7 @@ class DmarcSummaryResource(BaseModel):
             "failing_source_count": obj.get("failing_source_count"),
             "last_received_at": obj.get("last_received_at"),
             "reported_policy": DmarcSummaryResourceReportedPolicy.from_dict(obj["reported_policy"]) if obj.get("reported_policy") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

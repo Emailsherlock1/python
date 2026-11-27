@@ -23,6 +23,13 @@ from emailsherlock._generated.models.verify_job_response_progress import VerifyJ
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class VerifyJobResponse(BaseModel):
     """
@@ -38,10 +45,15 @@ class VerifyJobResponse(BaseModel):
     __properties: ClassVar[List[str]] = ["id", "status", "total", "progress", "created_at", "expires_at", "results"]
 
     @field_validator('status')
-    def status_validate_enum(cls, value):
+    def status_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['processing', 'completed']):
-            raise ValueError("must be one of enum values ('processing', 'completed')")
+        _allowed = set(['processing', 'completed', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['processing', 'completed', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('processing', 'completed', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -110,7 +122,7 @@ class VerifyJobResponse(BaseModel):
             "created_at": obj.get("created_at"),
             "expires_at": obj.get("expires_at"),
             "results": obj.get("results")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

@@ -26,6 +26,13 @@ from emailsherlock._generated.models.next_steps_resource_unaligned_sources_inner
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class NextStepsResource(BaseModel):
     """
@@ -119,7 +126,7 @@ class NextStepsResource(BaseModel):
             "ladder": NextStepsResourceLadder.from_dict(obj["ladder"]) if obj.get("ladder") is not None else None,
             "unaligned_sources": [NextStepsResourceUnalignedSourcesInner.from_dict(_item) for _item in obj["unaligned_sources"]] if obj.get("unaligned_sources") is not None else None,
             "findings": [NextStepsResourceFindingsInner.from_dict(_item) for _item in obj["findings"]] if obj.get("findings") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

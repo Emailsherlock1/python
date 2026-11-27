@@ -23,6 +23,13 @@ from emailsherlock._generated.models.dmarc_source_resource_dispositions import D
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DmarcSourceResource(BaseModel):
     """
@@ -46,24 +53,39 @@ class DmarcSourceResource(BaseModel):
     __properties: ClassVar[List[str]] = ["label", "kind", "status", "section", "message_count", "aligned_messages", "address_count", "ips", "asn", "asn_name", "country", "is_new", "spf_aligned_messages", "dkim_aligned_messages", "dispositions"]
 
     @field_validator('kind')
-    def kind_validate_enum(cls, value):
+    def kind_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['known', 'unknown']):
-            raise ValueError("must be one of enum values ('known', 'unknown')")
+        _allowed = set(['known', 'unknown', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['known', 'unknown', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('known', 'unknown', 'unknown_default_open_api')")
         return value
 
     @field_validator('status')
-    def status_validate_enum(cls, value):
+    def status_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['legit', 'fix', 'susp']):
-            raise ValueError("must be one of enum values ('legit', 'fix', 'susp')")
+        _allowed = set(['legit', 'fix', 'susp', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['legit', 'fix', 'susp', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('legit', 'fix', 'susp', 'unknown_default_open_api')")
         return value
 
     @field_validator('section')
-    def section_validate_enum(cls, value):
+    def section_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['fix', 'susp', 'legit', 'forwarded']):
-            raise ValueError("must be one of enum values ('fix', 'susp', 'legit', 'forwarded')")
+        _allowed = set(['fix', 'susp', 'legit', 'forwarded', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['fix', 'susp', 'legit', 'forwarded', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('fix', 'susp', 'legit', 'forwarded', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -150,7 +172,7 @@ class DmarcSourceResource(BaseModel):
             "spf_aligned_messages": obj.get("spf_aligned_messages"),
             "dkim_aligned_messages": obj.get("dkim_aligned_messages"),
             "dispositions": DmarcSourceResourceDispositions.from_dict(obj["dispositions"]) if obj.get("dispositions") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

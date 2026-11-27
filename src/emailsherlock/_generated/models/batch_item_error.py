@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class BatchItemError(BaseModel):
     """
@@ -32,10 +39,15 @@ class BatchItemError(BaseModel):
     __properties: ClassVar[List[str]] = ["email", "error"]
 
     @field_validator('error')
-    def error_validate_enum(cls, value):
+    def error_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['invalid_email', 'insufficient_credits', 'verify_unavailable']):
-            raise ValueError("must be one of enum values ('invalid_email', 'insufficient_credits', 'verify_unavailable')")
+        _allowed = set(['invalid_email', 'insufficient_credits', 'verify_unavailable', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['invalid_email', 'insufficient_credits', 'verify_unavailable', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('invalid_email', 'insufficient_credits', 'verify_unavailable', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -96,7 +108,7 @@ class BatchItemError(BaseModel):
         _obj = cls.model_validate({
             "email": obj.get("email"),
             "error": obj.get("error")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

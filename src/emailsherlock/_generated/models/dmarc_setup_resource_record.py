@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DmarcSetupResourceRecord(BaseModel):
     """
@@ -36,23 +43,33 @@ class DmarcSetupResourceRecord(BaseModel):
     __properties: ClassVar[List[str]] = ["host", "type", "value", "action", "current", "report_authorization_names"]
 
     @field_validator('type')
-    def type_validate_enum(cls, value):
+    def type_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['TXT']):
-            raise ValueError("must be one of enum values ('TXT')")
+        _allowed = set(['TXT', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['TXT', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('TXT', 'unknown_default_open_api')")
         return value
 
     @field_validator('action')
-    def action_validate_enum(cls, value):
+    def action_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['create', 'replace', 'add_address']):
-            raise ValueError("must be one of enum values ('create', 'replace', 'add_address')")
+        _allowed = set(['create', 'replace', 'add_address', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['create', 'replace', 'add_address', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('create', 'replace', 'add_address', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -117,7 +134,7 @@ class DmarcSetupResourceRecord(BaseModel):
             "action": obj.get("action"),
             "current": obj.get("current"),
             "report_authorization_names": obj.get("report_authorization_names")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

@@ -236,8 +236,10 @@ A call can also fail without an HTTP error status. It then raises `Emailsherlock
 | `err.code`         | when                                                                 |
 |--------------------|----------------------------------------------------------------------|
 | `invalid_argument` | an argument was refused before any request went out (`limit=0`, a `protected` entry without `name`) |
-| `invalid_response` | the API answered, but the response does not fit this SDK version's models (for example an enum value added later); updating the SDK reads it |
+| `invalid_response` | the API answered, but the response does not fit this SDK version's models (for example a field of another type); updating the SDK reads it |
 | `network_error`    | the request did not complete (connection, timeout)                   |
+
+A value newer than your SDK version in a field with a fixed set of values (a `result` added to verify, a domain type) does not fail the call. That field reads as `"unknown_default_open_api"` (`11184809` on a numeric field such as `range_days`), and the rest of the response arrives as usual. Updating the SDK reads the new value itself.
 
 ```python
 from emailsherlock import RateLimitError

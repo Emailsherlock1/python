@@ -24,6 +24,13 @@ from emailsherlock._generated.models.impersonation_analyze_request_protected_inn
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class ImpersonationAnalyzeRequest(BaseModel):
     """
@@ -33,7 +40,7 @@ class ImpersonationAnalyzeRequest(BaseModel):
     display_name: Optional[Annotated[str, Field(strict=True, max_length=256)]] = Field(default=None, description="The From display name as the reader sees it, at most 20 words.", json_schema_extra={"examples": ["Thomas Berger"]})
     reply_to: Optional[StrictStr] = Field(default=None, description="The Reply-To address, when the message has one. A value that is not of the form local@domain, or over the same length limits as from, is ignored.", json_schema_extra={"examples": ["payments@acme-billing.com"]})
     dmarc: Optional[StrictStr] = Field(default=None, description="The DMARC result your mail server recorded for the From domain, the word from the Authentication-Results header. Only fail counts: a pass does not lower the score, and any other word (pass, none, temperror, permerror, or a receiver-specific one such as Microsoft's bestguesspass) is read as no stated result.", json_schema_extra={"examples": ["pass"]})
-    protected: Annotated[List[ImpersonationAnalyzeRequestProtectedInner], Field(max_length=50)] = Field(description="The people and organisations a sender may pose as: executives, suppliers, partners. At most 50 per call. List the domains and addresses each one really sends from; without them, genuine mail from that identity scores like a forgery.")
+    protected: Annotated[List[ImpersonationAnalyzeRequestProtectedInner], Field(max_length=50)] = Field(description="The people and organisations a sender may pose as: executives, suppliers, partners. At most 50 per call. List the domains and addresses each one really sends from; without them, genuine mail from that identity scores like a forgery.", json_schema_extra={"examples": [[{"name": "Thomas Berger", "domains": ["acme.de"]}]]})
     __properties: ClassVar[List[str]] = ["from", "display_name", "reply_to", "dmarc", "protected"]
 
     model_config = ConfigDict(
@@ -114,7 +121,7 @@ class ImpersonationAnalyzeRequest(BaseModel):
             "reply_to": obj.get("reply_to"),
             "dmarc": obj.get("dmarc"),
             "protected": [ImpersonationAnalyzeRequestProtectedInner.from_dict(_item) for _item in obj["protected"]] if obj.get("protected") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 
