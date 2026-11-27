@@ -106,7 +106,9 @@ def error_from_response(
             status=status,
             code=code,
             credits_required=_num(headers.get("X-Credits-Required")),
-            credits_remaining=_num(headers.get("X-Credits-Remaining")),
+            credits_remaining=_num(
+                headers.get("X-Probe-Credits-Remaining") or headers.get("X-Credits-Remaining")
+            ),
         )
     if status == 429:
         return RateLimitError(

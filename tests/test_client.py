@@ -463,3 +463,73 @@ def test_client_id_reaches_new_endpoint(monkeypatch):
     base.domains.changes("acme.com")
     assert seen[0]["headers"]["X-Client-Id"] == "42"
     assert "X-Client-Id" not in seen[1]["headers"]
+
+
+# --- EM-4987: balance headers, client-side validation codes -----------------
+
+
+def test_reads_both_balances_from_their_current_headers(monkeypatch):
+    # The alias X-Credits-Remaining carries another value on purpose, so the
+    # test fails if the client still reads the alias first.
+    stub(monkeypatch, 200, WIRE, {
+        "X-Probe-Credits-Remaining": "41", "X-Credits-Remaining": "7",
+        "X-Validations-Remaining": "950", "X-Verify-Free-Remaining": "3",
+    })
+    es = Emailsherlock("k")
+    es.verify.single("jane@acme.com")
+    assert es.probe_credits_remaining == 41
+    assert es.validations_remaining == 950
+    assert es.credits_remaining == 41
+
+
+def test_falls_back_to_the_legacy_balance_headers(monkeypatch):
+    stub(monkeypatch, 200, WIRE, {"X-Credits-Remaining": "12", "X-Verify-Free-Remaining": "30"})
+    es = Emailsherlock("k")
+    es.verify.single("jane@acme.com")
+    assert es.probe_credits_remaining == 12
+    assert es.validations_remaining == 30
+    assert es.credits_remaining == 12
+
+
+def test_validations_stay_none_when_the_plan_is_unlimited(monkeypatch):
+    stub(monkeypatch, 200, WIRE, {"X-Probe-Credits-Remaining": "41"})
+    es = Emailsherlock("k")
+    es.verify.single("jane@acme.com")
+    assert es.validations_remaining is None
+    assert es.probe_credits_remaining == 41
+
+
+def test_402_prefers_the_probe_credits_header(monkeypatch):
+    stub(monkeypatch, 402,
+         {"error": {"code": "insufficient_credits", "message": "Not enough credits."}},
+         {"X-Probe-Credits-Remaining": "2", "X-Credits-Remaining": "9"})
+    with pytest.raises(InsufficientCreditsError) as exc:
+        Emailsherlock("k").verify.single("a@b.com")
+    assert exc.value.credits_remaining == 2
+
+
+def test_bad_argument_raises_invalid_argument_without_a_request(monkeypatch):
+    seen = record(monkeypatch, 200, {"address_id": 45, "limit": 10, "offset": 0, "count": 0, "checks": []})
+    with pytest.raises(emailsherlock.EmailsherlockError) as exc:
+        Emailsherlock("k").deliverability.list_checks(45, limit=0)
+    assert exc.value.code == "invalid_argument"
+    assert seen == []
+
+
+def test_protected_entry_without_name_raises_invalid_argument(monkeypatch):
+    seen = record(monkeypatch, 200, ANALYZE)
+    with pytest.raises(emailsherlock.EmailsherlockError) as exc:
+        Emailsherlock("k").impersonation.analyze("a@b.com", [{"domains": ["acme.de"]}])
+    assert exc.value.code == "invalid_argument"
+    assert seen == []
+
+
+def test_response_the_models_refuse_raises_invalid_response(monkeypatch):
+    # An enum value newer than this SDK version: pydantic refuses it while the
+    # response is read. That is not a network failure and not a bad argument.
+    stub(monkeypatch, 200, {**WIRE, "result": "quarantined"}, {"X-Probe-Credits-Remaining": "41"})
+    es = Emailsherlock("k")
+    with pytest.raises(emailsherlock.EmailsherlockError) as exc:
+        es.verify.single("jane@acme.com")
+    assert exc.value.code == "invalid_response"
+    assert es.probe_credits_remaining == 41

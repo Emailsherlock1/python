@@ -204,12 +204,17 @@ Every field and model is generated from the [OpenAPI spec](https://www.hostsherl
 
 ## Credits and rate limits
 
-After every call:
+Two balances apply. Standard verify draws on your monthly validations, deep verify
+of catch-all and unknown addresses draws probe credits. After every call that
+reports them:
 
 ```python
-es.credits_remaining   # e.g. 41
-es.rate_limit          # {"limit": 60, "remaining": 59, "reset": 1700000000}
+es.probe_credits_remaining   # e.g. 41
+es.validations_remaining     # e.g. 950, or None on a paid plan (unlimited)
+es.rate_limit                # {"limit": 60, "remaining": 59, "reset": 1700000000}
 ```
+
+`es.credits_remaining` still holds the probe-credit balance and is deprecated.
 
 ## Errors
 
@@ -225,6 +230,14 @@ Every failure raises a subclass of `EmailsherlockError`:
 | `ServiceUnavailableError`   | 503  | the service could not answer (on a verify call the credit is auto-refunded) |
 
 Any other status, such as 409 from `dmarc.start()`, raises `EmailsherlockError` itself; read `err.status` and `err.code`.
+
+A call can also fail without an HTTP error status. It then raises `EmailsherlockError` with `err.status` unset and one of these codes:
+
+| `err.code`         | when                                                                 |
+|--------------------|----------------------------------------------------------------------|
+| `invalid_argument` | an argument was refused before any request went out (`limit=0`, a `protected` entry without `name`) |
+| `invalid_response` | the API answered, but the response does not fit this SDK version's models (for example an enum value added later); updating the SDK reads it |
+| `network_error`    | the request did not complete (connection, timeout)                   |
 
 ```python
 from emailsherlock import RateLimitError
