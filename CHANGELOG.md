@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- `es.probe_credits_remaining` and `es.validations_remaining`: the two balances the API reports, read from `X-Probe-Credits-Remaining` and `X-Validations-Remaining` (falling back to the older header names). `validations_remaining` stays `None` on a paid plan, where standard verify is unlimited.
+
+### Changed
+
+- An argument the generated client refuses (`limit=0`, a `protected` entry without `name`) raises `EmailsherlockError` with `code="invalid_argument"`, no longer `code="network_error"`.
+- A response the generated models refuse (for example an enum value newer than this SDK version) raises `EmailsherlockError` with `code="invalid_response"`, no longer `code="network_error"`.
+- `InsufficientCreditsError.credits_remaining` reads `X-Probe-Credits-Remaining` first.
+
+### Deprecated
+
+- `es.credits_remaining`: holds the same value as `probe_credits_remaining`.
+
 ## 0.4.0
 
 The raw client is regenerated from the current OpenAPI spec, and the sugar layer reaches the four new endpoint groups. Named errors, `credits_remaining` / `rate_limit`, the env-var key fallback and `X-Client-Id` work on every new method.

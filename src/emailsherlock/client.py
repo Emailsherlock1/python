@@ -1,7 +1,8 @@
 """Ergonomic client for the EmailSherlock API.
 
 Thin sugar over the generated raw client in ``emailsherlock._generated``:
-named error classes, ``credits_remaining`` / ``rate_limit`` accessors, env-var
+named error classes, ``probe_credits_remaining`` / ``validations_remaining`` /
+``rate_limit`` accessors, env-var
 key fallback, and the resources ``client.verify``, ``client.guard``,
 ``client.deliverability``, ``client.dmarc``, ``client.tls_rpt``,
 ``client.domains`` and ``client.impersonation``, plus ``client.credits()``.
@@ -11,6 +12,8 @@ from __future__ import annotations
 import datetime
 import os
 from typing import Any, Callable, Dict, List, Optional, Union
+
+from pydantic import ValidationError as _PydanticValidationError
 
 from ._generated.api.account_api import AccountApi
 from ._generated.api.deliverability_api import DeliverabilityApi
@@ -52,6 +55,28 @@ from .models import (
 )
 
 DEFAULT_BASE_URL = "https://api.emailsherlock.com"
+
+
+class _ResponseShapeError(Exception):
+    """A response body the generated models refused, raised by ``_ApiClient``.
+
+    Kept apart from pydantic's ``ValidationError`` so ``Emailsherlock._call`` can
+    tell a response the SDK cannot read from an argument the caller got wrong:
+    both raise the same pydantic class inside the raw-client call.
+    """
+
+    def __init__(self, error: _PydanticValidationError, headers: Any) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.headers = headers
+
+
+class _ApiClient(ApiClient):
+    def response_deserialize(self, response_data: Any, response_types_map: Any = None) -> Any:
+        try:
+            return super().response_deserialize(response_data, response_types_map)
+        except _PydanticValidationError as exc:
+            raise _ResponseShapeError(exc, response_data.headers) from exc
 
 
 def _num(value: Optional[str]) -> Optional[float]:
@@ -390,13 +415,24 @@ class Emailsherlock:
             host=base_url.rstrip("/"),
             api_key={"ApiKeyAuth": key},
         )
-        self._api_client = ApiClient(configuration)
+        self._api_client = _ApiClient(configuration)
         self._api_client.user_agent = "emailsherlock-python/{}".format(__version__)
         if client_id is not None:
             self._api_client.set_default_header("X-Client-Id", str(client_id))
         self._account = AccountApi(self._api_client)
 
-        #: credits left after the most recent request (X-Credits-Remaining)
+        #: probe credits left, as the most recent response that carried the
+        #: balance reported it (X-Probe-Credits-Remaining, or its older name
+        #: X-Credits-Remaining). Probe credits pay for deep verify of catch-all
+        #: and unknown addresses. None until a response carries the header.
+        self.probe_credits_remaining: Optional[float] = None
+        #: free standard verifies left this month, as the most recent response
+        #: that carried the balance reported it (X-Validations-Remaining, or its
+        #: older name X-Verify-Free-Remaining). The API omits the header on a
+        #: paid plan, where standard verify is unlimited, so it stays None there.
+        self.validations_remaining: Optional[float] = None
+        #: deprecated since 0.5.0: the same value as ``probe_credits_remaining``,
+        #: under the name this SDK used before the API split the two balances
         self.credits_remaining: Optional[float] = None
         #: rate-limit window after the most recent request (X-RateLimit-*)
         self.rate_limit: Dict[str, Optional[float]] = {
@@ -444,6 +480,18 @@ class Emailsherlock:
             raise error_from_api_exception(exc) from exc
         except OpenApiException as exc:
             raise EmailsherlockError(str(exc) or "Request failed.", code="network_error") from exc
+        except _ResponseShapeError as exc:
+            self._capture_meta(exc.headers)
+            raise EmailsherlockError(
+                "The API response does not match this SDK version's models: {}".format(exc.error),
+                code="invalid_response",
+            ) from exc.error
+        except _PydanticValidationError as exc:
+            # Raised before any request goes out: a request model or a generated
+            # method refused an argument (limit=0, a protected entry without name).
+            raise EmailsherlockError(
+                "Invalid argument: {}".format(exc), code="invalid_argument"
+            ) from exc
         except (OSError, ValueError) as exc:  # urllib3 transport / connection failures
             raise EmailsherlockError(
                 "Request failed: {}".format(exc), code="network_error"
@@ -456,9 +504,13 @@ class Emailsherlock:
         if not headers:
             return
         getter = headers.get
-        credits = getter("X-Credits-Remaining")
-        if credits is not None:
-            self.credits_remaining = _num(credits)
+        probe = getter("X-Probe-Credits-Remaining") or getter("X-Credits-Remaining")
+        if probe is not None:
+            self.probe_credits_remaining = _num(probe)
+            self.credits_remaining = self.probe_credits_remaining
+        validations = getter("X-Validations-Remaining") or getter("X-Verify-Free-Remaining")
+        if validations is not None:
+            self.validations_remaining = _num(validations)
         if getter("X-RateLimit-Limit") is not None:
             self.rate_limit = {
                 "limit": _num(getter("X-RateLimit-Limit")),
