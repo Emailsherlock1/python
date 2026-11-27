@@ -23,6 +23,13 @@ from emailsherlock._generated.models.next_steps_resource_unaligned_sources_inner
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class NextStepsResourceUnalignedSourcesInner(BaseModel):
     """
@@ -41,13 +48,18 @@ class NextStepsResourceUnalignedSourcesInner(BaseModel):
     __properties: ClassVar[List[str]] = ["name", "provider", "addresses", "messages", "aligned_messages", "reason", "why", "fix", "spf_include", "dkim_records"]
 
     @field_validator('reason')
-    def reason_validate_enum(cls, value):
+    def reason_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['relayed', 'default_key', 'dkim_foreign', 'spf_not_listed', 'spf_none', 'spf_foreign', 'unauthenticated', 'unexplained']):
-            raise ValueError("must be one of enum values ('relayed', 'default_key', 'dkim_foreign', 'spf_not_listed', 'spf_none', 'spf_foreign', 'unauthenticated', 'unexplained')")
+        _allowed = set(['relayed', 'default_key', 'dkim_foreign', 'spf_not_listed', 'spf_none', 'spf_foreign', 'unauthenticated', 'unexplained', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['relayed', 'default_key', 'dkim_foreign', 'spf_not_listed', 'spf_none', 'spf_foreign', 'unauthenticated', 'unexplained', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('relayed', 'default_key', 'dkim_foreign', 'spf_not_listed', 'spf_none', 'spf_foreign', 'unauthenticated', 'unexplained', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -128,7 +140,7 @@ class NextStepsResourceUnalignedSourcesInner(BaseModel):
             "fix": obj.get("fix"),
             "spf_include": obj.get("spf_include"),
             "dkim_records": [NextStepsResourceUnalignedSourcesInnerDkimRecordsInner.from_dict(_item) for _item in obj["dkim_records"]] if obj.get("dkim_records") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

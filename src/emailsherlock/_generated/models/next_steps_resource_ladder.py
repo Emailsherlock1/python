@@ -23,6 +23,13 @@ from emailsherlock._generated.models.next_steps_resource_ladder_steps_inner impo
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class NextStepsResourceLadder(BaseModel):
     """
@@ -36,13 +43,18 @@ class NextStepsResourceLadder(BaseModel):
     __properties: ClassVar[List[str]] = ["done", "total", "next_policy", "ready_for_next_policy", "steps"]
 
     @field_validator('next_policy')
-    def next_policy_validate_enum(cls, value):
+    def next_policy_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['quarantine', 'reject']):
-            raise ValueError("must be one of enum values ('quarantine', 'reject')")
+        _allowed = set(['quarantine', 'reject', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['quarantine', 'reject', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('quarantine', 'reject', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -108,7 +120,7 @@ class NextStepsResourceLadder(BaseModel):
             "next_policy": obj.get("next_policy"),
             "ready_for_next_policy": obj.get("ready_for_next_policy"),
             "steps": [NextStepsResourceLadderStepsInner.from_dict(_item) for _item in obj["steps"]] if obj.get("steps") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class NextStepsResourcePolicy(BaseModel):
     """
@@ -32,23 +39,33 @@ class NextStepsResourcePolicy(BaseModel):
     __properties: ClassVar[List[str]] = ["tag", "value"]
 
     @field_validator('tag')
-    def tag_validate_enum(cls, value):
+    def tag_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['p', 'sp']):
-            raise ValueError("must be one of enum values ('p', 'sp')")
+        _allowed = set(['p', 'sp', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['p', 'sp', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('p', 'sp', 'unknown_default_open_api')")
         return value
 
     @field_validator('value')
-    def value_validate_enum(cls, value):
+    def value_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['none', 'quarantine', 'reject']):
-            raise ValueError("must be one of enum values ('none', 'quarantine', 'reject')")
+        _allowed = set(['none', 'quarantine', 'reject', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['none', 'quarantine', 'reject', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('none', 'quarantine', 'reject', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -109,7 +126,7 @@ class NextStepsResourcePolicy(BaseModel):
         _obj = cls.model_validate({
             "tag": obj.get("tag"),
             "value": obj.get("value")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

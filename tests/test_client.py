@@ -525,11 +525,54 @@ def test_protected_entry_without_name_raises_invalid_argument(monkeypatch):
 
 
 def test_response_the_models_refuse_raises_invalid_response(monkeypatch):
-    # An enum value newer than this SDK version: pydantic refuses it while the
-    # response is read. That is not a network failure and not a bad argument.
-    stub(monkeypatch, 200, {**WIRE, "result": "quarantined"}, {"X-Probe-Credits-Remaining": "41"})
+    # A field of the wrong type: pydantic refuses it while the response is read.
+    # That is not a network failure and not a bad argument.
+    stub(monkeypatch, 200, {**WIRE, "score": "high"}, {"X-Probe-Credits-Remaining": "41"})
     es = Emailsherlock("k")
     with pytest.raises(emailsherlock.EmailsherlockError) as exc:
         es.verify.single("jane@acme.com")
     assert exc.value.code == "invalid_response"
     assert es.probe_credits_remaining == 41
+
+
+# EM-4994: an enum value the spec does not list, on a single field, a nested
+# model and a list entry. The response still arrives; only those values read as
+# the generator's unknown-default constant.
+def test_enum_values_newer_than_the_sdk_read_as_unknown(monkeypatch):
+    stub(monkeypatch, 200, {
+        **WIRE,
+        "result": "quarantined",
+        "decision": {"recommendation": "hold", "reasons": ["mailbox_accepts"]},
+        "domain": {"name": "acme.com", "types": ["company", "newtype"], "dmarc_policy": "reject"},
+    })
+    got = Emailsherlock("k").verify.single("jane@acme.com")
+    assert got.result == "unknown_default_open_api"
+    assert got.decision.recommendation == "unknown_default_open_api"
+    assert got.domain.types == ["company", "unknown_default_open_api"]
+    assert got.domain.dmarc_policy == "reject"
+    assert got.email == "jane@acme.com" and got.score == 0.95
+
+
+def test_integer_enum_newer_than_the_sdk_keeps_its_type(monkeypatch):
+    stub(monkeypatch, 200, {
+        "domain": "acme.com", "range_days": 90, "message_count": 120, "aligned_messages": 100,
+        "aligned_pct": 83.3, "source_count": 4, "known_source_count": 3,
+        "unknown_source_count": 1, "new_source_count": 0, "failing_source_count": 1,
+        "last_received_at": None,
+    })
+    resp = Emailsherlock("k").dmarc.summary("acme.com", range=7)
+    assert resp.range_days == 11184809
+    assert resp.message_count == 120
+
+
+def test_enum_typo_in_a_request_model_still_raises():
+    # Only reading a response is lenient: a model built in code keeps refusing
+    # a value the spec does not list, on construction and on assignment.
+    from pydantic import ValidationError
+    from emailsherlock._generated.models.verify_single_request import VerifySingleRequest
+
+    with pytest.raises(ValidationError):
+        VerifySingleRequest(email="jane@acme.com", mode="enchanced")
+    req = VerifySingleRequest(email="jane@acme.com")
+    with pytest.raises(ValidationError):
+        req.mode = "enchanced"

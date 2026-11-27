@@ -23,6 +23,13 @@ from emailsherlock._generated.models.tls_rpt_report_resource_policies_inner impo
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class TlsRptReportResource(BaseModel):
     """
@@ -104,7 +111,7 @@ class TlsRptReportResource(BaseModel):
             "success_count": obj.get("success_count"),
             "failure_count": obj.get("failure_count"),
             "policies": [TlsRptReportResourcePoliciesInner.from_dict(_item) for _item in obj["policies"]] if obj.get("policies") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class AccountStatusResponseRateLimit(BaseModel):
     """
@@ -86,7 +93,7 @@ class AccountStatusResponseRateLimit(BaseModel):
             "limit": obj.get("limit"),
             "remaining": obj.get("remaining"),
             "reset": obj.get("reset")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class VerifyDecisionResponse(BaseModel):
     """
@@ -32,10 +39,15 @@ class VerifyDecisionResponse(BaseModel):
     __properties: ClassVar[List[str]] = ["recommendation", "reasons"]
 
     @field_validator('recommendation')
-    def recommendation_validate_enum(cls, value):
+    def recommendation_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['allow', 'deny', 'review']):
-            raise ValueError("must be one of enum values ('allow', 'deny', 'review')")
+        _allowed = set(['allow', 'deny', 'review', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['allow', 'deny', 'review', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('allow', 'deny', 'review', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -91,7 +103,7 @@ class VerifyDecisionResponse(BaseModel):
         _obj = cls.model_validate({
             "recommendation": obj.get("recommendation"),
             "reasons": obj.get("reasons")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

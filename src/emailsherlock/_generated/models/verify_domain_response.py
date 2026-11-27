@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class VerifyDomainResponse(BaseModel):
     """
@@ -46,34 +53,49 @@ class VerifyDomainResponse(BaseModel):
     __properties: ClassVar[List[str]] = ["name", "types", "score", "spf", "dkim", "dmarc", "dmarc_policy", "mta_sts", "tls_rpt", "bimi", "dane", "blacklists", "dnssec", "caa", "blocked", "blocked_label"]
 
     @field_validator('types')
-    def types_validate_enum(cls, value):
+    def types_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
+        _allowed = set(['freemail', 'disposable', 'custom', 'company', 'government', 'education', 'public', 'isp', 'relay', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return [i if i in _allowed else _unknown for i in value]
+
         for i in value:
-            if i not in set(['freemail', 'disposable', 'custom', 'company', 'government', 'education', 'public', 'isp', 'relay']):
-                raise ValueError("each list item must be one of ('freemail', 'disposable', 'custom', 'company', 'government', 'education', 'public', 'isp', 'relay')")
+            if i not in set(['freemail', 'disposable', 'custom', 'company', 'government', 'education', 'public', 'isp', 'relay', 'unknown_default_open_api']):
+                raise ValueError("each list item must be one of ('freemail', 'disposable', 'custom', 'company', 'government', 'education', 'public', 'isp', 'relay', 'unknown_default_open_api')")
         return value
 
     @field_validator('dmarc_policy')
-    def dmarc_policy_validate_enum(cls, value):
+    def dmarc_policy_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['none', 'quarantine', 'reject']):
-            raise ValueError("must be one of enum values ('none', 'quarantine', 'reject')")
+        _allowed = set(['none', 'quarantine', 'reject', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['none', 'quarantine', 'reject', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('none', 'quarantine', 'reject', 'unknown_default_open_api')")
         return value
 
     @field_validator('dnssec')
-    def dnssec_validate_enum(cls, value):
+    def dnssec_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['secure', 'insecure', 'bogus']):
-            raise ValueError("must be one of enum values ('secure', 'insecure', 'bogus')")
+        _allowed = set(['secure', 'insecure', 'bogus', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['secure', 'insecure', 'bogus', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('secure', 'insecure', 'bogus', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -213,7 +235,7 @@ class VerifyDomainResponse(BaseModel):
             "caa": obj.get("caa"),
             "blocked": obj.get("blocked") if obj.get("blocked") is not None else False,
             "blocked_label": obj.get("blocked_label")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

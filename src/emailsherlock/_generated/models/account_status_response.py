@@ -24,6 +24,13 @@ from emailsherlock._generated.models.account_status_response_rate_limit import A
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class AccountStatusResponse(BaseModel):
     """
@@ -101,7 +108,7 @@ class AccountStatusResponse(BaseModel):
             "rate_limit": AccountStatusResponseRateLimit.from_dict(obj["rate_limit"]) if obj.get("rate_limit") is not None else None,
             "plan": obj.get("plan"),
             "sandbox": obj.get("sandbox")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

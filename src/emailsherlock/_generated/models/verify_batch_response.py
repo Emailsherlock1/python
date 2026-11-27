@@ -23,6 +23,13 @@ from emailsherlock._generated.models.verify_batch_response_results_inner import 
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class VerifyBatchResponse(BaseModel):
     """
@@ -90,7 +97,7 @@ class VerifyBatchResponse(BaseModel):
 
         _obj = cls.model_validate({
             "results": [VerifyBatchResponseResultsInner.from_dict(_item) for _item in obj["results"]] if obj.get("results") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

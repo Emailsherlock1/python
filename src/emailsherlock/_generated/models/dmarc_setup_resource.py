@@ -25,6 +25,13 @@ from emailsherlock._generated.models.dmarc_setup_resource_watch_slots import Dma
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DmarcSetupResource(BaseModel):
     """
@@ -39,10 +46,15 @@ class DmarcSetupResource(BaseModel):
     __properties: ClassVar[List[str]] = ["domain", "status", "confirmed", "record", "dns_provider", "watch_slots"]
 
     @field_validator('status')
-    def status_validate_enum(cls, value):
+    def status_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['found', 'not_found', 'wrong_record', 'unknown']):
-            raise ValueError("must be one of enum values ('found', 'not_found', 'wrong_record', 'unknown')")
+        _allowed = set(['found', 'not_found', 'wrong_record', 'unknown', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['found', 'not_found', 'wrong_record', 'unknown', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('found', 'not_found', 'wrong_record', 'unknown', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -121,7 +133,7 @@ class DmarcSetupResource(BaseModel):
             "record": DmarcSetupResourceRecord.from_dict(obj["record"]) if obj.get("record") is not None else None,
             "dns_provider": DmarcSetupResourceDnsProvider.from_dict(obj["dns_provider"]) if obj.get("dns_provider") is not None else None,
             "watch_slots": DmarcSetupResourceWatchSlots.from_dict(obj["watch_slots"]) if obj.get("watch_slots") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

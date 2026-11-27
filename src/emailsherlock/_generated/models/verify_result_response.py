@@ -24,6 +24,13 @@ from emailsherlock._generated.models.verify_domain_response import VerifyDomainR
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class VerifyResultResponse(BaseModel):
     """
@@ -55,47 +62,72 @@ class VerifyResultResponse(BaseModel):
     __properties: ClassVar[List[str]] = ["email", "result", "deliverable", "reason", "mx", "mx_record", "disposable", "role", "catch_all", "free_email", "relay", "relay_provider", "parked", "spam_trap", "spam_trap_type", "suggested_correction", "smtp_diagnosis", "score", "freshness", "checked_at", "domain", "decision", "degraded"]
 
     @field_validator('result')
-    def result_validate_enum(cls, value):
+    def result_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['valid', 'invalid', 'catch_all', 'disposable', 'role', 'unknown']):
-            raise ValueError("must be one of enum values ('valid', 'invalid', 'catch_all', 'disposable', 'role', 'unknown')")
+        _allowed = set(['valid', 'invalid', 'catch_all', 'disposable', 'role', 'unknown', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['valid', 'invalid', 'catch_all', 'disposable', 'role', 'unknown', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('valid', 'invalid', 'catch_all', 'disposable', 'role', 'unknown', 'unknown_default_open_api')")
         return value
 
     @field_validator('reason')
-    def reason_validate_enum(cls, value):
+    def reason_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['bad_syntax', 'no_mx', 'mailbox_accepts', 'mailbox_not_found', 'disposable_provider', 'role_address', 'catch_all_domain', 'accept_all_provider', 'greylisted', 'smtp_timeout', 'smtp_unreachable', 'smtp_throttled', 'probe_suppressed', 'probe_budget_exhausted', 'verification_pending', 'blocked_domain', 'spam_trap']):
-            raise ValueError("must be one of enum values ('bad_syntax', 'no_mx', 'mailbox_accepts', 'mailbox_not_found', 'disposable_provider', 'role_address', 'catch_all_domain', 'accept_all_provider', 'greylisted', 'smtp_timeout', 'smtp_unreachable', 'smtp_throttled', 'probe_suppressed', 'probe_budget_exhausted', 'verification_pending', 'blocked_domain', 'spam_trap')")
+        _allowed = set(['bad_syntax', 'no_mx', 'mailbox_accepts', 'mailbox_not_found', 'disposable_provider', 'role_address', 'catch_all_domain', 'accept_all_provider', 'greylisted', 'smtp_timeout', 'smtp_unreachable', 'smtp_throttled', 'probe_suppressed', 'probe_budget_exhausted', 'verification_pending', 'blocked_domain', 'spam_trap', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['bad_syntax', 'no_mx', 'mailbox_accepts', 'mailbox_not_found', 'disposable_provider', 'role_address', 'catch_all_domain', 'accept_all_provider', 'greylisted', 'smtp_timeout', 'smtp_unreachable', 'smtp_throttled', 'probe_suppressed', 'probe_budget_exhausted', 'verification_pending', 'blocked_domain', 'spam_trap', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('bad_syntax', 'no_mx', 'mailbox_accepts', 'mailbox_not_found', 'disposable_provider', 'role_address', 'catch_all_domain', 'accept_all_provider', 'greylisted', 'smtp_timeout', 'smtp_unreachable', 'smtp_throttled', 'probe_suppressed', 'probe_budget_exhausted', 'verification_pending', 'blocked_domain', 'spam_trap', 'unknown_default_open_api')")
         return value
 
     @field_validator('spam_trap_type')
-    def spam_trap_type_validate_enum(cls, value):
+    def spam_trap_type_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['known_trap_domain', 'reputation_heuristic']):
-            raise ValueError("must be one of enum values ('known_trap_domain', 'reputation_heuristic')")
+        _allowed = set(['known_trap_domain', 'reputation_heuristic', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['known_trap_domain', 'reputation_heuristic', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('known_trap_domain', 'reputation_heuristic', 'unknown_default_open_api')")
         return value
 
     @field_validator('smtp_diagnosis')
-    def smtp_diagnosis_validate_enum(cls, value):
+    def smtp_diagnosis_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
         if value is None:
             return value
 
-        if value not in set(['accepted', 'mailbox_full', 'mailbox_disabled', 'mailbox_not_found', 'greylist_deferred', 'policy_block']):
-            raise ValueError("must be one of enum values ('accepted', 'mailbox_full', 'mailbox_disabled', 'mailbox_not_found', 'greylist_deferred', 'policy_block')")
+        _allowed = set(['accepted', 'mailbox_full', 'mailbox_disabled', 'mailbox_not_found', 'greylist_deferred', 'policy_block', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['accepted', 'mailbox_full', 'mailbox_disabled', 'mailbox_not_found', 'greylist_deferred', 'policy_block', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('accepted', 'mailbox_full', 'mailbox_disabled', 'mailbox_not_found', 'greylist_deferred', 'policy_block', 'unknown_default_open_api')")
         return value
 
     @field_validator('freshness')
-    def freshness_validate_enum(cls, value):
+    def freshness_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['fresh', 'cached_recent', 'cached_stale_refreshed']):
-            raise ValueError("must be one of enum values ('fresh', 'cached_recent', 'cached_stale_refreshed')")
+        _allowed = set(['fresh', 'cached_recent', 'cached_stale_refreshed', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['fresh', 'cached_recent', 'cached_stale_refreshed', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('fresh', 'cached_recent', 'cached_stale_refreshed', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -233,7 +265,7 @@ class VerifyResultResponse(BaseModel):
             "domain": VerifyDomainResponse.from_dict(obj["domain"]) if obj.get("domain") is not None else None,
             "decision": VerifyDecisionResponse.from_dict(obj["decision"]) if obj.get("decision") is not None else None,
             "degraded": obj.get("degraded") if obj.get("degraded") is not None else False
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

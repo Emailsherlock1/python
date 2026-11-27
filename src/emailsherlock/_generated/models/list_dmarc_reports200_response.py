@@ -23,6 +23,13 @@ from emailsherlock._generated.models.dmarc_report_resource import DmarcReportRes
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class ListDmarcReports200Response(BaseModel):
     """
@@ -112,7 +119,7 @@ class ListDmarcReports200Response(BaseModel):
             "count": obj.get("count"),
             "next_offset": obj.get("next_offset"),
             "reports": [DmarcReportResource.from_dict(_item) for _item in obj["reports"]] if obj.get("reports") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

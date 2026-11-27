@@ -9,7 +9,8 @@
 ### Changed
 
 - An argument the generated client refuses (`limit=0`, a `protected` entry without `name`) raises `EmailsherlockError` with `code="invalid_argument"`, no longer `code="network_error"`.
-- A response the generated models refuse (for example an enum value newer than this SDK version) raises `EmailsherlockError` with `code="invalid_response"`, no longer `code="network_error"`.
+- A response the generated models refuse (for example a field of another type) raises `EmailsherlockError` with `code="invalid_response"`, no longer `code="network_error"`.
+- An enum value newer than this SDK version no longer fails the response: that field reads as `"unknown_default_open_api"` (`11184809` on an integer enum such as `range_days`, the generator's own placeholder), on a single field and on each unknown entry of a list, and the rest of the response arrives. A model you build yourself still refuses a value the spec does not list.
 - `InsufficientCreditsError.credits_remaining` reads `X-Probe-Credits-Remaining` first.
 
 ### Deprecated

@@ -22,6 +22,13 @@ from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DeliverabilityCheckResource(BaseModel):
     """
@@ -43,10 +50,15 @@ class DeliverabilityCheckResource(BaseModel):
     __properties: ClassVar[List[str]] = ["id", "address_id", "address_label", "address", "received_at", "from", "from_domain", "subject", "sending_ip", "message_id", "score", "verdict_band", "forwarded_inline"]
 
     @field_validator('verdict_band')
-    def verdict_band_validate_enum(cls, value):
+    def verdict_band_validate_enum(cls, value, info: ValidationInfo):
         """Validates the enum"""
-        if value not in set(['inbox_ready', 'at_risk', 'likely_filtered']):
-            raise ValueError("must be one of enum values ('inbox_ready', 'at_risk', 'likely_filtered')")
+        _allowed = set(['inbox_ready', 'at_risk', 'likely_filtered', 'unknown_default_open_api'])
+        _unknown = 'unknown_default_open_api'
+        if info.context and info.context.get(_ENUM_UNKNOWN_DEFAULT):
+            return value if value in _allowed else _unknown
+
+        if value not in set(['inbox_ready', 'at_risk', 'likely_filtered', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('inbox_ready', 'at_risk', 'likely_filtered', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(
@@ -138,7 +150,7 @@ class DeliverabilityCheckResource(BaseModel):
             "score": obj.get("score"),
             "verdict_band": obj.get("verdict_band"),
             "forwarded_inline": obj.get("forwarded_inline")
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 

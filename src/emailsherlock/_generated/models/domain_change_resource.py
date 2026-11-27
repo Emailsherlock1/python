@@ -23,6 +23,13 @@ from emailsherlock._generated.models.domain_change_resource_changes import Domai
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
+from pydantic import ValidationInfo  # noqa: F401
+
+# from_dict() validates with this context key set, so an enum value the spec
+# does not list reads as 'unknown_default_open_api' (11184809 on an integer
+# enum) in a response. Building a
+# model in code (constructor, assignment) carries no context and stays strict.
+_ENUM_UNKNOWN_DEFAULT = "enum_unknown_default"
 
 class DomainChangeResource(BaseModel):
     """
@@ -101,7 +108,7 @@ class DomainChangeResource(BaseModel):
             "description": obj.get("description"),
             "created_at": obj.get("created_at"),
             "changes": DomainChangeResourceChanges.from_dict(obj["changes"]) if obj.get("changes") is not None else None
-        })
+        }, context={_ENUM_UNKNOWN_DEFAULT: True})
         return _obj
 
 
