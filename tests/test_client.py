@@ -149,3 +149,73 @@ def test_missing_key_raises_at_construction(monkeypatch):
     monkeypatch.delenv("EMAILSHERLOCK_API_KEY", raising=False)
     with pytest.raises(emailsherlock.EmailsherlockError):
         Emailsherlock()
+
+
+# --- X-Client-Id (EM-3857) ---------------------------------------------------
+
+def capture_headers(monkeypatch):
+    seen = []
+
+    def _request(self, method, url, headers=None, body=None, post_params=None,
+                 _request_timeout=None, **kw):
+        seen.append(dict(headers or {}))
+        return FakeRESTResponse(200, {
+            "credits": {"total": 1240, "purchased": 1000, "gifted": 240},
+            "rate_limit": {"limit": 60, "remaining": 59, "reset": 1700000000},
+            "plan": "Free", "sandbox": False,
+        }, None)
+
+    monkeypatch.setattr(rest.RESTClientObject, "request", _request)
+    return seen
+
+
+def test_client_id_header_sent_when_set(monkeypatch):
+    seen = capture_headers(monkeypatch)
+    es = Emailsherlock("k", client_id=42)
+    assert es.client_id == 42
+    es.credits()
+    assert seen[0]["X-Client-Id"] == "42"
+
+
+def test_client_id_header_absent_when_unset(monkeypatch):
+    seen = capture_headers(monkeypatch)
+    es = Emailsherlock("k")
+    assert es.client_id is None
+    es.credits()
+    assert "X-Client-Id" not in seen[0]
+
+
+def test_with_client_id_returns_new_client(monkeypatch):
+    seen = capture_headers(monkeypatch)
+    base = Emailsherlock("k", base_url="https://example.test", timeout=5.0)
+    tenant = base.with_client_id(7)
+    assert tenant is not base
+    assert tenant.client_id == 7
+    assert base.client_id is None
+    assert tenant._timeout == 5.0
+    assert tenant._base_url == "https://example.test"
+    tenant.credits()
+    base.credits()
+    assert seen[0]["X-Client-Id"] == "7"
+    assert "X-Client-Id" not in seen[1]
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "5", 1.5])
+def test_invalid_client_id_raises(bad):
+    with pytest.raises(emailsherlock.EmailsherlockError) as exc:
+        Emailsherlock("k", client_id=bad)
+    assert exc.value.code == "config_error"
+    with pytest.raises(emailsherlock.EmailsherlockError):
+        Emailsherlock("k").with_client_id(bad)
+
+
+@pytest.mark.parametrize("status,code,cls", [
+    (404, "client_not_found", emailsherlock.ValidationError),
+    (400, "client_id_not_allowed", emailsherlock.ValidationError),
+    (403, "forbidden", emailsherlock.ForbiddenError),
+])
+def test_client_errors_keep_server_code(monkeypatch, status, code, cls):
+    stub(monkeypatch, status, {"error": {"code": code, "message": "x"}})
+    with pytest.raises(cls) as exc:
+        Emailsherlock("k", client_id=1).credits()
+    assert exc.value.code == code
